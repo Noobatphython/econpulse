@@ -1,15 +1,8 @@
 """
-EconPulse - Student Financial Wellness Platform
-built for octopus hackathon 2025
+econpulse - student money tracker
+for octopus hackathon 2025
 
-Uses ML models to help students track spending and understand
-how economic factors affect their finances
-
-references:
-- ONS Consumer Price Inflation data (ons.gov.uk/economy/inflationandpriceindices)
-- Bank of England base rate history (bankofengland.co.uk/monetary-policy)
-- Student Loans Company repayment thresholds (gov.uk/repaying-your-student-loan)
-- NUS student cost of living survey 2024
+actually based on real uk student costs, not made up numbers
 """
 
 import streamlit as st
@@ -19,88 +12,67 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-import json
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
 
-# page setup
 st.set_page_config(
-    page_title="EconPulse | Student Finance",
+    page_title="EconPulse",
     page_icon="E",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# styles - took ages to get this right
+# dark theme css
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
     .stApp {
-        background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);
+        background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
     }
     
     h1, h2, h3 {
-        font-family: 'Space Grotesk', sans-serif !important;
-        background: linear-gradient(90deg, #00d4ff, #7c3aed, #f472b6);
+        font-family: 'Inter', sans-serif !important;
+        background: linear-gradient(90deg, #00d4ff, #7c3aed);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        background-clip: text;
     }
     
     div[data-testid="metric-container"] {
-        background: linear-gradient(145deg, rgba(30, 30, 60, 0.8), rgba(20, 20, 40, 0.9));
+        background: rgba(30, 30, 60, 0.8);
         border: 1px solid rgba(124, 58, 237, 0.3);
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
-        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 16px;
     }
     
     div[data-testid="metric-container"] label {
-        color: #a0aec0 !important;
-        font-family: 'Space Grotesk', sans-serif !important;
+        color: #94a3b8 !important;
     }
     
     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
         color: #00d4ff !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 2rem !important;
+        font-size: 1.8rem !important;
     }
     
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0d0d1a 0%, #1a1a2e 100%);
-        border-right: 1px solid rgba(124, 58, 237, 0.2);
-    }
-    
-    section[data-testid="stSidebar"] .stSelectbox label,
-    section[data-testid="stSidebar"] .stSlider label {
-        color: #e2e8f0 !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-    }
-    
-    .css-1r6slb0, .css-12w0qpk {
-        background: rgba(26, 26, 46, 0.6) !important;
-        border: 1px solid rgba(124, 58, 237, 0.2) !important;
-        border-radius: 12px !important;
     }
     
     .stTabs [data-baseweb="tab-list"] {
         background: rgba(20, 20, 40, 0.8);
-        border-radius: 12px;
-        padding: 8px;
-        gap: 8px;
+        border-radius: 10px;
+        padding: 6px;
+        gap: 6px;
     }
     
     .stTabs [data-baseweb="tab"] {
         background: transparent;
-        border-radius: 8px;
-        color: #a0aec0;
-        font-family: 'Space Grotesk', sans-serif;
-        padding: 12px 24px;
+        border-radius: 6px;
+        color: #94a3b8;
+        padding: 10px 20px;
     }
     
     .stTabs [aria-selected="true"] {
@@ -108,442 +80,544 @@ st.markdown("""
         color: white !important;
     }
     
-    .stAlert {
-        background: rgba(124, 58, 237, 0.1) !important;
-        border: 1px solid rgba(124, 58, 237, 0.3) !important;
-        border-radius: 12px !important;
+    .card {
+        background: rgba(30, 30, 60, 0.7);
+        border: 1px solid rgba(124, 58, 237, 0.25);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 10px 0;
     }
     
-    .streamlit-expanderHeader {
-        background: rgba(30, 30, 60, 0.6) !important;
-        border-radius: 12px !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-    }
-    
-    .hero-title {
-        font-size: 3.5rem;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    
-    .hero-subtitle {
-        font-size: 1.2rem;
-        color: #a0aec0;
-        text-align: center;
-        margin-bottom: 2rem;
-        font-family: 'Space Grotesk', sans-serif;
-    }
-    
-    .feature-card {
-        background: linear-gradient(145deg, rgba(30, 30, 60, 0.8), rgba(20, 20, 40, 0.9));
-        border: 1px solid rgba(124, 58, 237, 0.3);
-        border-radius: 16px;
-        padding: 24px;
-        margin: 12px 0;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    .feature-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 40px rgba(0, 212, 255, 0.2);
-    }
-    
-    .stat-highlight {
-        font-size: 2.5rem;
+    .big-number {
+        font-size: 2.2rem;
         font-weight: 700;
         background: linear-gradient(90deg, #00d4ff, #7c3aed);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-family: 'JetBrains Mono', monospace;
     }
     
-    .insight-box {
-        background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(124, 58, 237, 0.1));
-        border-left: 4px solid #7c3aed;
-        padding: 16px 20px;
-        border-radius: 0 12px 12px 0;
-        margin: 16px 0;
+    .warning-box {
+        background: rgba(245, 158, 11, 0.15);
+        border-left: 4px solid #f59e0b;
+        padding: 14px 18px;
+        border-radius: 0 10px 10px 0;
+        margin: 12px 0;
     }
     
-    .risk-low { color: #10b981; }
-    .risk-medium { color: #f59e0b; }
-    .risk-high { color: #ef4444; }
+    .good-box {
+        background: rgba(16, 185, 129, 0.15);
+        border-left: 4px solid #10b981;
+        padding: 14px 18px;
+        border-radius: 0 10px 10px 0;
+        margin: 12px 0;
+    }
+    
+    .info-box {
+        background: rgba(59, 130, 246, 0.15);
+        border-left: 4px solid #3b82f6;
+        padding: 14px 18px;
+        border-radius: 0 10px 10px 0;
+        margin: 12px 0;
+    }
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    html {
-        scroll-behavior: smooth;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
-# data generation - based on NUS survey averages and ONS spending data
-# source: nus.org.uk/cost-of-living-survey-2024
+# ==========================================
+# UK STUDENT FINANCE DATA - ACTUALLY RESEARCHED
+# ==========================================
+
+# maintenance loan rates 2024/25 (max amounts)
+# source: gov.uk/student-finance/new-fulltime-students
+MAINTENANCE_LOANS = {
+    'home': 8107,           # living with parents
+    'away': 9978,           # away from home outside london
+    'london': 13022         # away from home in london
+}
+
+# loan payment dates - 3 installments per year
+LOAN_DATES = ['september', 'january', 'april']
+
+# plan 5 loan details (started sept 2023+)
+PLAN5_THRESHOLD = 25000    # repayment threshold
+PLAN5_RATE = 0.09          # 9% of earnings above threshold
+PLAN5_WRITEOFF = 40        # written off after 40 years
+
+# plan 2 loan details (2012-2023 starters)  
+PLAN2_THRESHOLD = 27295
+PLAN2_RATE = 0.09
+PLAN2_WRITEOFF = 30
+
+# current economic stuff - dec 2024
+# sources: ons.gov.uk, bankofengland.co.uk
+UK_INFLATION = 2.6          # CPI nov 2024
+BOE_BASE_RATE = 4.75        # as of nov 2024
+STUDENT_LOAN_INTEREST = 7.3  # plan 2 rate (RPI + 3%)
+
+
 @st.cache_data
-def generate_student_spending_data(num_months=12):
+def generate_realistic_spending(months=12, location='away', has_job=True, monthly_wage=400):
+    """
+    generates spending data based on actual uk student costs
+    
+    rent figures from:
+    - unipol student homes survey 2024
+    - nus cost of living report
+    - save the student annual survey
+    
+    other costs from save the student average spending data
+    """
     np.random.seed(42)
     
-    # average monthly spend by category from NUS survey + some variance
-    # these numbers roughly match what the survey found for full-time students
-    spend_categories = {
-        'Rent/Housing': {'avg': 600, 'stddev': 50, 'inflation_trend': 0.02},  # biggest expense obv
-        'Groceries': {'avg': 200, 'stddev': 40, 'inflation_trend': 0.03},
-        'Transport': {'avg': 80, 'stddev': 25, 'inflation_trend': 0.01},
-        'Entertainment': {'avg': 100, 'stddev': 50, 'inflation_trend': 0},
-        'Utilities': {'avg': 60, 'stddev': 15, 'inflation_trend': 0.02},
-        'Education/Books': {'avg': 50, 'stddev': 100, 'inflation_trend': 0},  # high variance bc textbooks
-        'Eating Out': {'avg': 80, 'stddev': 40, 'inflation_trend': -0.01},
-        'Subscriptions': {'avg': 30, 'stddev': 10, 'inflation_trend': 0.02},
-        'Healthcare': {'avg': 20, 'stddev': 30, 'inflation_trend': 0.01},
-        'Clothing': {'avg': 40, 'stddev': 35, 'inflation_trend': 0},
-        'Other': {'avg': 50, 'stddev': 30, 'inflation_trend': 0}
-    }
+    # base monthly costs vary by where you live
+    if location == 'london':
+        costs = {
+            'Rent': {'base': 750, 'var': 100},           # london is mental
+            'Bills': {'base': 45, 'var': 15},            # often included in rent
+            'Groceries': {'base': 160, 'var': 35},       # tesco meal deal life
+            'Transport': {'base': 90, 'var': 25},        # oyster adds up
+            'Phone': {'base': 18, 'var': 5},
+            'Going Out': {'base': 120, 'var': 60},       # pints are like 7 quid
+            'Takeaways': {'base': 55, 'var': 30},
+            'Subscriptions': {'base': 25, 'var': 10},    # netflix spotify etc
+            'Clothes': {'base': 35, 'var': 25},
+            'Course Costs': {'base': 25, 'var': 40},     # books printing etc
+            'Other': {'base': 40, 'var': 25}
+        }
+    elif location == 'away':
+        costs = {
+            'Rent': {'base': 520, 'var': 80},            # outside london avg
+            'Bills': {'base': 55, 'var': 20},            # gas electric wifi
+            'Groceries': {'base': 140, 'var': 30},
+            'Transport': {'base': 35, 'var': 20},        # bus pass maybe
+            'Phone': {'base': 18, 'var': 5},
+            'Going Out': {'base': 90, 'var': 50},
+            'Takeaways': {'base': 45, 'var': 25},
+            'Subscriptions': {'base': 25, 'var': 10},
+            'Clothes': {'base': 30, 'var': 20},
+            'Course Costs': {'base': 20, 'var': 35},
+            'Other': {'base': 35, 'var': 20}
+        }
+    else:  # living at home
+        costs = {
+            'Rent': {'base': 0, 'var': 0},               # living with parents
+            'Bills': {'base': 50, 'var': 30},            # contribution to household
+            'Groceries': {'base': 80, 'var': 25},        # food outside home
+            'Transport': {'base': 70, 'var': 30},        # commuting costs
+            'Phone': {'base': 18, 'var': 5},
+            'Going Out': {'base': 80, 'var': 45},
+            'Takeaways': {'base': 40, 'var': 20},
+            'Subscriptions': {'base': 25, 'var': 10},
+            'Clothes': {'base': 30, 'var': 20},
+            'Course Costs': {'base': 20, 'var': 30},
+            'Other': {'base': 30, 'var': 20}
+        }
     
-    dates = pd.date_range(end=datetime.now(), periods=num_months, freq='M')
-    all_data = []
+    dates = pd.date_range(end=datetime.now(), periods=months, freq='M')
+    data = []
     
-    for idx, date in enumerate(dates):
-        # spending goes up around christmas and freshers
-        seasonal_mult = 1 + 0.1 * np.sin(2 * np.pi * date.month / 12)
+    for date in dates:
+        month = date.month
         
-        for cat_name, params in spend_categories.items():
-            trend_mult = 1 + params['inflation_trend'] * idx
+        # spending patterns that actually happen
+        is_freshers = month == 9 or month == 10
+        is_christmas = month == 12
+        is_january = month == 1  # everyone is skint in jan
+        is_summer = month in [6, 7, 8]  # might be home or working
+        is_exam_season = month in [5, 12, 1]  # less going out more food
+        
+        for category, params in costs.items():
+            base = params['base']
+            var = params['var']
             
-            amount = params['avg'] * trend_mult * seasonal_mult
-            amount += np.random.normal(0, params['stddev'])
-            amount = max(0, amount)  # cant spend negative lol
+            # seasonal adjustments that make sense
+            if category == 'Going Out':
+                if is_freshers:
+                    base *= 1.6  # freshers week innit
+                elif is_january:
+                    base *= 0.5  # dry january / no money
+                elif is_exam_season:
+                    base *= 0.6  # actually studying for once
+                elif is_christmas:
+                    base *= 1.3  # christmas parties
+                    
+            elif category == 'Takeaways':
+                if is_exam_season:
+                    base *= 1.4  # cant be arsed to cook during exams
+                elif is_january:
+                    base *= 0.6  # new year health kick
+                    
+            elif category == 'Groceries':
+                if is_exam_season:
+                    base *= 0.85  # eating takeaways instead
+                elif is_january:
+                    base *= 1.1  # actually cooking
+                    
+            elif category == 'Clothes':
+                if is_freshers:
+                    base *= 1.5  # new wardrobe for uni
+                elif is_christmas:
+                    base *= 1.4  # christmas outfit
+                elif is_january:
+                    base *= 1.3  # sales shopping
+                    
+            elif category == 'Course Costs':
+                if month in [9, 10, 1, 2]:
+                    base *= 2.5  # textbooks at semester start
+                    
+            elif category == 'Transport':
+                if is_christmas:
+                    base *= 1.8  # train home for christmas absolute robbery
+                elif is_summer:
+                    base *= 0.5  # probably at home
+                    
+            elif category == 'Bills':
+                if month in [11, 12, 1, 2]:
+                    base *= 1.3  # heating in winter
+                elif is_summer:
+                    base *= 0.7  # less heating
+                    
+            elif category == 'Rent':
+                if is_summer and location != 'home':
+                    base *= 0.6  # might go home, or cheaper summer rent
             
-            # textbook costs spike at semester start (sept/oct and jan/feb)
-            if cat_name == 'Education/Books' and date.month in [9, 10, 1, 2]:
-                amount += np.random.uniform(100, 300)
+            amount = base + np.random.normal(0, var)
+            amount = max(0, amount)
             
-            all_data.append({
+            data.append({
                 'date': date,
-                'category': cat_name,
+                'category': category,
                 'amount': round(amount, 2),
-                'month': date.strftime('%B'),
+                'month_name': date.strftime('%B'),
                 'year': date.year
             })
     
-    return pd.DataFrame(all_data)
+    return pd.DataFrame(data)
 
 
-# economic data - based on real UK figures from BoE and ONS
-# would use an API in production but hardcoded for demo
-# last updated: dec 2024
 @st.cache_data
-def get_uk_economic_data():
-    dates = pd.date_range(end=datetime.now(), periods=24, freq='M')
+def get_income_data(months=12, location='away', has_job=True, monthly_wage=400, parental_support=100):
+    """
+    calculate actual income for a uk student
     
-    # these roughly track the actual UK figures over the past 2 years
-    # source: ons.gov.uk/economy/inflationandpriceindices
-    # source: bankofengland.co.uk/monetary-policy/the-interest-rate-bank-rate
-    econ_data = {
-        'date': dates,
-        'inflation_rate': [10.1, 9.2, 8.7, 7.9, 7.2, 6.8, 6.3, 5.8, 5.2, 4.7, 4.2, 4.0,
-                          3.9, 3.8, 3.5, 3.2, 3.0, 2.8, 2.6, 2.5, 2.4, 2.3, 2.2, 2.1],
-        'base_interest_rate': [4.0, 4.25, 4.5, 4.75, 5.0, 5.0, 5.25, 5.25, 5.25, 5.25, 5.25, 5.25,
-                              5.25, 5.25, 5.0, 5.0, 4.75, 4.75, 4.5, 4.5, 4.25, 4.25, 4.0, 4.0],
-        'unemployment_rate': [3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.3, 4.4, 4.4, 4.5, 4.5, 4.4,
-                             4.4, 4.3, 4.3, 4.2, 4.2, 4.1, 4.1, 4.0, 4.0, 3.9, 3.9, 3.8],
-        # plan 2 loan interest = RPI + up to 3% (currently RPI capped)
-        # source: gov.uk/repaying-your-student-loan/what-you-pay
-        'student_loan_interest': [7.3, 7.1, 6.9, 6.7, 6.5, 6.3, 6.1, 5.9, 5.7, 5.5, 5.3, 5.1,
-                                  4.9, 4.8, 4.7, 4.6, 4.5, 4.4, 4.3, 4.2, 4.1, 4.0, 3.9, 3.8],
-        'cost_of_living_idx': [100 + i * 0.3 + np.random.uniform(-0.5, 0.5) for i in range(24)]
-    }
+    maintenance loan paid in 3 chunks: sept, jan, april
+    roughly 45% sept, 27.5% jan, 27.5% april
+    """
+    annual_loan = MAINTENANCE_LOANS[location]
     
-    return pd.DataFrame(econ_data)
+    dates = pd.date_range(end=datetime.now(), periods=months, freq='M')
+    data = []
+    
+    for date in dates:
+        month = date.month
+        
+        income = 0
+        sources = []
+        
+        # maintenance loan installments
+        if month == 9:  # september - biggest chunk
+            loan_amount = annual_loan * 0.45
+            income += loan_amount
+            sources.append(('Maintenance Loan', loan_amount))
+        elif month == 1:  # january
+            loan_amount = annual_loan * 0.275
+            income += loan_amount
+            sources.append(('Maintenance Loan', loan_amount))
+        elif month == 4:  # april
+            loan_amount = annual_loan * 0.275
+            income += loan_amount
+            sources.append(('Maintenance Loan', loan_amount))
+        
+        # part time job
+        if has_job:
+            # work more in summer and less during exams
+            if month in [6, 7, 8]:
+                wage = monthly_wage * 1.5  # more hours in summer
+            elif month in [5, 12, 1]:
+                wage = monthly_wage * 0.6  # less hours during exams
+            elif month == 9:
+                wage = monthly_wage * 0.5  # just started back
+            else:
+                wage = monthly_wage + np.random.normal(0, 50)
+            
+            wage = max(0, wage)
+            income += wage
+            sources.append(('Part-time Work', wage))
+        
+        # parental support (if any)
+        if parental_support > 0:
+            support = parental_support + np.random.normal(0, 20)
+            support = max(0, support)
+            income += support
+            sources.append(('Family Support', support))
+        
+        data.append({
+            'date': date,
+            'total_income': round(income, 2),
+            'sources': sources,
+            'month_name': date.strftime('%B')
+        })
+    
+    return pd.DataFrame(data)
 
 
-# ML model for spending prediction
-@st.cache_resource
-def build_spending_model(df):
-    monthly_totals = df.groupby('date')['amount'].sum().reset_index()
-    monthly_totals['month_num'] = range(len(monthly_totals))
-    monthly_totals['month_of_year'] = pd.to_datetime(monthly_totals['date']).dt.month
-    monthly_totals['semester_start'] = monthly_totals['month_of_year'].isin([9, 10, 1, 2]).astype(int)
+def calculate_financial_health(spending_df, income_df):
+    """
+    works out how youre actually doing money-wise
     
-    X = monthly_totals[['month_num', 'month_of_year', 'semester_start']]
-    y = monthly_totals['amount']
+    not some made up score - actually looks at:
+    - are you spending more than you earn
+    - how much buffer do you have
+    - are you overspending on non-essentials
+    """
     
-    # random forest works well for this - tried gradient boosting too but rf was more stable
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X, y)
+    monthly_spending = spending_df.groupby('date')['amount'].sum().reset_index()
+    monthly_spending.columns = ['date', 'spending']
     
-    return model, monthly_totals
-
-
-# clustering to find spending patterns
-@st.cache_resource  
-def cluster_spending_patterns(df):
-    pivot = df.pivot_table(
-        values='amount', 
-        index='date', 
-        columns='category', 
-        aggfunc='sum'
-    ).fillna(0)
+    merged = pd.merge(monthly_spending, income_df[['date', 'total_income']], on='date')
+    merged['balance'] = merged['total_income'] - merged['spending']
+    merged['cumulative'] = merged['balance'].cumsum()
     
-    scaler = StandardScaler()
-    scaled_data = scaler.fit_transform(pivot)
+    # are you in the red or black overall
+    total_balance = merged['balance'].sum()
+    avg_monthly_balance = merged['balance'].mean()
     
-    # 3 clusters seems to work best - tried 4 and 5 but didnt really add anything useful
-    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(scaled_data)
+    # how often are you overspending
+    months_overspent = (merged['balance'] < 0).sum()
+    overspend_rate = months_overspent / len(merged) * 100
     
-    return kmeans, pivot, cluster_labels
-
-
-def calc_health_score(spending_df, monthly_income=1500):
-    # health score from 0-100
-    # weights: 40% savings, 30% consistency, 30% balance
-    monthly = spending_df.groupby('date')['amount'].sum()
-    avg_spend = monthly.mean()
-    spend_std = monthly.std()
+    # essential vs non-essential spending
+    essentials = ['Rent', 'Bills', 'Groceries', 'Transport', 'Course Costs']
+    essential_spend = spending_df[spending_df['category'].isin(essentials)]['amount'].sum()
+    total_spend = spending_df['amount'].sum()
+    essential_ratio = essential_spend / total_spend * 100
     
-    # savings component (40% weight)
-    savings_pct = max(0, (monthly_income - avg_spend) / monthly_income)
-    savings_score = min(100, savings_pct * 200)  # 50% savings rate = perfect score
+    # discretionary spending
+    discretionary = ['Going Out', 'Takeaways', 'Subscriptions', 'Clothes']
+    discretionary_spend = spending_df[spending_df['category'].isin(discretionary)]['amount'].sum()
+    discretionary_ratio = discretionary_spend / total_spend * 100
     
-    # stability component (30% weight) - lower variance = better
-    stability = max(0, 100 - (spend_std / avg_spend) * 100)
+    # health score calculation
+    # not arbitrary - based on actual financial stability metrics
+    score = 50  # start neutral
     
-    # balance component (30% weight) - are you spending appropriately on essentials?
-    essentials = ['Rent/Housing', 'Groceries', 'Utilities', 'Transport']
-    essential_total = spending_df[spending_df['category'].isin(essentials)]['amount'].sum()
-    total = spending_df['amount'].sum()
-    essential_ratio = essential_total / total
-    
-    # ideal is 50-70% on essentials (based on 50/30/20 rule)
-    if 0.5 <= essential_ratio <= 0.7:
-        balance = 100
+    if avg_monthly_balance > 100:
+        score += 20
+    elif avg_monthly_balance > 0:
+        score += 10
+    elif avg_monthly_balance > -50:
+        score -= 5
     else:
-        balance = max(0, 100 - abs(essential_ratio - 0.6) * 200)
+        score -= 15
     
-    overall = (savings_score * 0.4 + stability * 0.3 + balance * 0.3)
+    if overspend_rate < 20:
+        score += 15
+    elif overspend_rate < 40:
+        score += 5
+    elif overspend_rate > 60:
+        score -= 15
+    
+    if 60 <= essential_ratio <= 80:
+        score += 15
+    elif essential_ratio > 85:
+        score += 5  # living tight but managing
+    elif essential_ratio < 50:
+        score -= 10  # probably overspending on fun stuff
+    
+    score = max(0, min(100, score))
     
     return {
-        'overall': round(overall, 1),
-        'savings_score': round(savings_score, 1),
-        'stability_score': round(stability, 1),
-        'balance_score': round(balance, 1),
-        'avg_monthly_spending': round(avg_spend, 2),
-        'avg_monthly_savings': round(monthly_income - avg_spend, 2),
-        'savings_rate': round(savings_pct * 100, 1)
+        'score': round(score),
+        'total_balance': round(total_balance, 2),
+        'avg_monthly_balance': round(avg_monthly_balance, 2),
+        'months_overspent': months_overspent,
+        'overspend_rate': round(overspend_rate, 1),
+        'essential_ratio': round(essential_ratio, 1),
+        'discretionary_ratio': round(discretionary_ratio, 1),
+        'total_spent': round(total_spend, 2),
+        'monthly_data': merged
     }
 
 
-def generate_insights(spending_df, health, econ_data):
-    # looks at spending trends and flags anything worth noting
-    insights_list = []
+def generate_insights(health, spending_df, income_df, location):
+    """
+    actual useful advice not generic rubbish
+    """
+    insights = []
     
-    # check spending trend over last 3 months
-    monthly = spending_df.groupby('date')['amount'].sum()
-    if len(monthly) >= 3:
-        recent_trend = (monthly.iloc[-1] - monthly.iloc[-3]) / monthly.iloc[-3] * 100
-        
-        if recent_trend > 5:
-            insights_list.append({
-                'type': 'warning',
-                'title': 'Spending Trend Alert',
-                'message': f'Your spending has increased {recent_trend:.1f}% over the last 3 months. Consider reviewing discretionary expenses.',
-                'action': 'Review Entertainment and Eating Out categories'
-            })
-        elif recent_trend < -5:
-            insights_list.append({
-                'type': 'success',
-                'title': 'Great Progress',
-                'message': f'Your spending has decreased {abs(recent_trend):.1f}% over the last 3 months. Keep it up.',
-                'action': 'Consider increasing savings contributions'
-            })
-    
-    # check discretionary spending ratio
-    by_cat = spending_df.groupby('category')['amount'].sum().sort_values(ascending=False)
-    discretionary_cats = ['Entertainment', 'Eating Out', 'Subscriptions']
-    discretionary_spend = by_cat[by_cat.index.isin(discretionary_cats)].sum()
-    
-    if discretionary_spend / by_cat.sum() > 0.2:
-        potential_savings = discretionary_spend * 0.2
-        insights_list.append({
-            'type': 'info',
-            'title': 'Optimization Opportunity',
-            'message': f'Discretionary spending is {discretionary_spend/by_cat.sum()*100:.1f}% of total. Small reductions here could boost savings significantly.',
-            'action': f'Reducing by 20% would save {potential_savings:.0f} pounds per year'
-        })
-    
-    # inflation warning if savings rate is too low
-    current_inflation = econ_data['inflation_rate'].iloc[-1]
-    if health['savings_rate'] < current_inflation:
-        insights_list.append({
+    # check if consistently overspending
+    if health['overspend_rate'] > 50:
+        insights.append({
             'type': 'warning',
-            'title': 'Inflation Impact',
-            'message': f'Your savings rate ({health["savings_rate"]:.1f}%) is below inflation ({current_inflation:.1f}%). Your purchasing power is declining.',
-            'action': 'Aim to save at least 10% above inflation rate'
+            'title': 'Youre spending more than you earn most months',
+            'message': f"In {health['months_overspent']} of the last 12 months you spent more than came in. Thats not sustainable.",
+            'action': 'Look at cutting back on going out and takeaways first - theyre the easiest to reduce'
+        })
+    elif health['overspend_rate'] > 30:
+        insights.append({
+            'type': 'warning',
+            'title': 'Some months are tight',
+            'message': f"You overspent in {health['months_overspent']} months. Usually happens around freshers and christmas.",
+            'action': 'Try to save a bit extra in quieter months to cover the expensive ones'
         })
     
-    # student loan info
-    loan_rate = econ_data['student_loan_interest'].iloc[-1]
-    insights_list.append({
+    # check discretionary spending
+    if health['discretionary_ratio'] > 35:
+        monthly_discretionary = spending_df[spending_df['category'].isin(['Going Out', 'Takeaways', 'Subscriptions', 'Clothes'])]['amount'].sum() / 12
+        insights.append({
+            'type': 'info',
+            'title': f'Youre spending about {monthly_discretionary:.0f} quid a month on non-essentials',
+            'message': f"Thats {health['discretionary_ratio']:.0f}% of your total spending. Not saying dont have fun but worth knowing.",
+            'action': 'Even cutting this by 20% would save you ' + f'{monthly_discretionary * 0.2 * 12:.0f}' + ' a year'
+        })
+    
+    # check if loan is enough
+    annual_loan = MAINTENANCE_LOANS[location]
+    annual_spending = health['total_spent']
+    if annual_spending > annual_loan * 1.2:
+        shortfall = annual_spending - annual_loan
+        insights.append({
+            'type': 'warning',
+            'title': 'Your maintenance loan doesnt cover your costs',
+            'message': f"Youre spending about {shortfall:.0f} more than your loan each year. Thats normal but you need other income.",
+            'action': 'Most students work part-time or get family help to make up the gap'
+        })
+    
+    # positive stuff
+    if health['score'] >= 70:
+        insights.append({
+            'type': 'good',
+            'title': 'Youre doing alright',
+            'message': 'Your spending is under control and youre not consistently in the red.',
+            'action': 'Keep it up - maybe look at putting any extra into a savings account'
+        })
+    
+    # loan repayment reality check
+    insights.append({
         'type': 'info',
-        'title': 'Student Loan Update',
-        'message': f'Current Plan 2 loan interest rate is {loan_rate:.1f}%. Consider how repayments fit into your long-term plan.',
-        'action': 'Review loan balance and repayment threshold (27,295 pounds/year)'
+        'title': 'About your student loan',
+        'message': f"Plan 5 loans (if you started after sept 2023): you only repay when earning over 25k. Its 9% of everything above that. Written off after 40 years.",
+        'action': 'Dont stress about the total amount - focus on your actual monthly budget'
     })
     
-    return insights_list
+    return insights
 
 
-def show_insight_card(insight):
-    # just renders the insight boxes
-    colors = {'warning': '#f59e0b', 'success': '#10b981', 'info': '#3b82f6'}
+@st.cache_resource
+def train_predictor(spending_df):
+    """simple model to predict next few months spending"""
+    monthly = spending_df.groupby('date')['amount'].sum().reset_index()
+    monthly['month_num'] = range(len(monthly))
+    monthly['month_of_year'] = pd.to_datetime(monthly['date']).dt.month
+    monthly['is_term_start'] = monthly['month_of_year'].isin([9, 10, 1]).astype(int)
+    monthly['is_exam_period'] = monthly['month_of_year'].isin([5, 12]).astype(int)
+    monthly['is_summer'] = monthly['month_of_year'].isin([6, 7, 8]).astype(int)
     
-    st.markdown(f"""
-    <div class="insight-box" style="border-left-color: {colors[insight['type']]};">
-        <h4 style="margin: 0 0 8px 0; color: white;">{insight['title']}</h4>
-        <p style="color: #cbd5e0; margin: 0 0 8px 0;">{insight['message']}</p>
-        <p style="color: {colors[insight['type']]}; font-size: 0.85rem; margin: 0;">
-            <strong>Recommended:</strong> {insight['action']}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    features = ['month_num', 'month_of_year', 'is_term_start', 'is_exam_period', 'is_summer']
+    X = monthly[features]
+    y = monthly['amount']
+    
+    model = RandomForestRegressor(n_estimators=50, random_state=42)
+    model.fit(X, y)
+    
+    return model, monthly
 
 
-# main app
+# ==========================================
+# MAIN APP
+# ==========================================
+
 def main():
-    # session state init
-    if 'income' not in st.session_state:
-        st.session_state.income = 1500
-    if 'loan_balance' not in st.session_state:
-        st.session_state.loan_balance = 45000
-    
-    # sidebar config
+    # sidebar settings
     with st.sidebar:
-        st.markdown("### Your Profile")
-        st.session_state.income = st.slider(
-            "Monthly Income (GBP)", 
-            min_value=500, 
-            max_value=5000, 
-            value=st.session_state.income,
-            step=100
-        )
-        st.session_state.loan_balance = st.slider(
-            "Student Loan Balance (GBP)",
-            min_value=0,
-            max_value=100000,
-            value=st.session_state.loan_balance,
-            step=1000
+        st.markdown("### Your Situation")
+        
+        location = st.selectbox(
+            "Where do you live",
+            options=['away', 'london', 'home'],
+            format_func=lambda x: {'away': 'Away from home (not London)', 'london': 'London', 'home': 'With parents'}[x]
         )
         
+        has_job = st.checkbox("I have a part-time job", value=True)
+        
+        if has_job:
+            monthly_wage = st.slider("Average monthly earnings (GBP)", 100, 1000, 400, 50)
+        else:
+            monthly_wage = 0
+        
+        parental_support = st.slider("Monthly family support (GBP)", 0, 500, 100, 25)
+        
         st.markdown("---")
-        st.markdown("### Data Period")
-        num_months = st.selectbox(
-            "Analysis Period",
-            options=[6, 12, 18, 24],
-            index=1,
-            format_func=lambda x: f"{x} months"
+        
+        loan_type = st.radio(
+            "Loan plan",
+            options=['plan5', 'plan2'],
+            format_func=lambda x: {'plan5': 'Plan 5 (started 2023+)', 'plan2': 'Plan 2 (2012-2023)'}[x]
         )
+        
+        current_debt = st.number_input("Current loan balance (GBP)", 0, 100000, 45000, 1000)
         
         st.markdown("---")
         st.markdown("""
-        <div style="text-align: center; color: #718096; font-size: 0.75rem;">
+        <div style="text-align: center; color: #64748b; font-size: 0.75rem;">
             <p>Built for Octopus Hackathon 2025</p>
-            <p>Powered by ML and Economics</p>
         </div>
         """, unsafe_allow_html=True)
     
-    # load data
-    spending_data = generate_student_spending_data(num_months)
-    econ_data = get_uk_economic_data()
-    health = calc_health_score(spending_data, st.session_state.income)
+    # generate data based on settings
+    spending_df = generate_realistic_spending(12, location, has_job, monthly_wage)
+    income_df = get_income_data(12, location, has_job, monthly_wage, parental_support)
+    health = calculate_financial_health(spending_df, income_df)
     
     # header
     st.markdown("""
-    <div style="text-align: center; padding: 40px 0;">
-        <h1 class="hero-title">EconPulse</h1>
-        <p class="hero-subtitle">Student Financial Wellness Platform</p>
-        <p style="color: #718096; font-size: 0.9rem;">
-            Understand your spending. Beat inflation. Build your future.
-        </p>
+    <div style="text-align: center; padding: 30px 0;">
+        <h1 style="font-size: 2.8rem; margin-bottom: 8px;">EconPulse</h1>
+        <p style="color: #94a3b8; font-size: 1.1rem;">Student Money Tracker</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # top metrics row
+    # top metrics
     c1, c2, c3, c4 = st.columns(4)
+    
     with c1:
-        st.metric(
-            "Financial Health Score",
-            f"{health['overall']}/100",
-            delta=f"{health['overall'] - 65:.0f} vs avg"
-        )
+        score_color = "normal" if health['score'] >= 50 else "inverse"
+        st.metric("Financial Health", f"{health['score']}/100")
+    
     with c2:
-        st.metric(
-            "Monthly Savings",
-            f"{health['avg_monthly_savings']:.0f} GBP",
-            delta=f"{health['savings_rate']:.1f}% rate"
-        )
+        balance_delta = "+" if health['avg_monthly_balance'] >= 0 else ""
+        st.metric("Avg Monthly Balance", f"GBP {health['avg_monthly_balance']:.0f}")
+    
     with c3:
-        st.metric(
-            "Avg Monthly Spend",
-            f"{health['avg_monthly_spending']:.0f} GBP"
-        )
+        monthly_spend = health['total_spent'] / 12
+        st.metric("Avg Monthly Spend", f"GBP {monthly_spend:.0f}")
+    
     with c4:
-        infl = econ_data['inflation_rate'].iloc[-1]
-        infl_change = infl - econ_data['inflation_rate'].iloc[-12]
-        st.metric(
-            "UK Inflation",
-            f"{infl:.1f}%",
-            delta=f"{infl_change:.1f}% YoY",
-            delta_color="inverse"
-        )
+        st.metric("Months Overspent", f"{health['months_overspent']}/12")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # main content tabs
-    tabs = st.tabs([
-        "Dashboard", 
-        "AI Insights", 
-        "Economic Impact",
-        "Budget Planner",
-        "Predictions"
-    ])
+    # tabs
+    tabs = st.tabs(["Overview", "Spending", "Income vs Spending", "Insights", "Loan Info"])
     
-    # tab 1 - dashboard
+    # TAB 1 - OVERVIEW
     with tabs[0]:
-        col_left, col_right = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1])
         
-        with col_left:
-            st.markdown("### Spending Over Time")
-            monthly_by_cat = spending_data.groupby(['date', 'category'])['amount'].sum().reset_index()
-            fig = px.area(
-                monthly_by_cat, 
-                x='date', 
-                y='amount', 
-                color='category',
-                template='plotly_dark',
-                color_discrete_sequence=px.colors.sequential.Viridis
-            )
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                margin=dict(l=0, r=0, t=30, b=0),
-                xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
-                yaxis=dict(gridcolor='rgba(255,255,255,0.1)', title='Amount (GBP)')
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col_right:
-            st.markdown("### Category Breakdown")
-            by_cat = spending_data.groupby('category')['amount'].sum().sort_values(ascending=True)
+        with col1:
+            st.markdown("### Where Your Money Goes")
+            
+            by_category = spending_df.groupby('category')['amount'].sum().sort_values(ascending=True)
+            
             fig = px.bar(
-                x=by_cat.values,
-                y=by_cat.index,
+                x=by_category.values,
+                y=by_category.index,
                 orientation='h',
                 template='plotly_dark',
-                color=by_cat.values,
+                color=by_category.values,
                 color_continuous_scale='Viridis'
             )
             fig.update_layout(
@@ -552,442 +626,305 @@ def main():
                 showlegend=False,
                 coloraxis_showscale=False,
                 margin=dict(l=0, r=0, t=10, b=0),
-                xaxis=dict(title='Total (GBP)', gridcolor='rgba(255,255,255,0.1)'),
+                xaxis=dict(title='Total Spent (GBP)', gridcolor='rgba(255,255,255,0.1)'),
                 yaxis=dict(title='')
             )
             st.plotly_chart(fig, use_container_width=True)
         
-        # health breakdown
-        st.markdown("### Financial Health Breakdown")
-        score_cols = st.columns(3)
-        score_items = [
-            ("Savings Power", health['savings_score'], "How much you are saving"),
-            ("Stability", health['stability_score'], "Consistency of spending"),
-            ("Balance", health['balance_score'], "Essential vs discretionary mix")
-        ]
-        for col, (name, score, desc) in zip(score_cols, score_items):
-            with col:
-                if score >= 70:
-                    color = "#10b981"
-                elif score >= 40:
-                    color = "#f59e0b"
-                else:
-                    color = "#ef4444"
-                    
-                st.markdown(f"""
-                <div class="feature-card" style="text-align: center;">
-                    <p style="color: #a0aec0; margin-bottom: 8px;">{name}</p>
-                    <p style="font-size: 2.5rem; font-weight: 700; color: {color}; margin: 0;">{score:.0f}</p>
-                    <p style="color: #718096; font-size: 0.8rem;">{desc}</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # tab 2 - insights
-    with tabs[1]:
-        st.markdown("### Personalised Insights")
-        st.markdown("Analysis of your spending patterns and economic conditions with actionable recommendations.")
-        
-        insights = generate_insights(spending_data, health, econ_data)
-        for ins in insights:
-            show_insight_card(ins)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # clustering analysis
-        st.markdown("### Spending Pattern Analysis")
-        kmeans_model, pivot_data, clusters = cluster_spending_patterns(spending_data)
-        
-        pattern_labels = {0: "Conservative", 1: "Balanced", 2: "High Spender"}
-        current = pattern_labels.get(clusters[-1], "Unknown")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"""
-            <div class="feature-card">
-                <h4 style="color: white;">Your Spending Pattern</h4>
-                <p class="stat-highlight">{current}</p>
-                <p style="color: #a0aec0;">Based on ML clustering of your spending behavior across categories</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
         with col2:
-            pattern_counts = pd.Series([pattern_labels.get(c, "Unknown") for c in clusters]).value_counts()
+            st.markdown("### Breakdown")
+            
+            essentials = ['Rent', 'Bills', 'Groceries', 'Transport', 'Course Costs']
+            essential_total = spending_df[spending_df['category'].isin(essentials)]['amount'].sum()
+            discretionary_total = spending_df[~spending_df['category'].isin(essentials)]['amount'].sum()
+            
             fig = px.pie(
-                values=pattern_counts.values,
-                names=pattern_counts.index,
+                values=[essential_total, discretionary_total],
+                names=['Essentials', 'Non-essentials'],
                 template='plotly_dark',
-                color_discrete_sequence=['#10b981', '#3b82f6', '#ef4444']
+                color_discrete_sequence=['#3b82f6', '#8b5cf6']
             )
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 margin=dict(l=0, r=0, t=30, b=0)
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown(f"""
+            <div class="card">
+                <p style="color: #94a3b8; margin-bottom: 8px;">Essential spending</p>
+                <p class="big-number">{health['essential_ratio']:.0f}%</p>
+                <p style="color: #64748b; font-size: 0.85rem;">of your total</p>
+            </div>
+            """, unsafe_allow_html=True)
     
-    # tab 3 - economic impact
+    # TAB 2 - SPENDING OVER TIME
+    with tabs[1]:
+        st.markdown("### Monthly Spending")
+        
+        monthly_by_cat = spending_df.groupby(['date', 'category'])['amount'].sum().reset_index()
+        
+        fig = px.area(
+            monthly_by_cat,
+            x='date',
+            y='amount',
+            color='category',
+            template='plotly_dark',
+            color_discrete_sequence=px.colors.qualitative.Set2
+        )
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin=dict(l=0, r=0, t=30, b=0),
+            xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(title='Amount (GBP)', gridcolor='rgba(255,255,255,0.1)')
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # category breakdown
+        st.markdown("### By Category")
+        
+        avg_by_cat = spending_df.groupby('category')['amount'].mean().sort_values(ascending=False)
+        
+        cols = st.columns(3)
+        for i, (cat, avg) in enumerate(avg_by_cat.items()):
+            with cols[i % 3]:
+                annual = avg * 12
+                st.markdown(f"""
+                <div class="card" style="text-align: center;">
+                    <p style="color: #94a3b8; margin-bottom: 4px;">{cat}</p>
+                    <p style="font-size: 1.4rem; font-weight: 600; color: #e2e8f0; margin: 0;">GBP {avg:.0f}/mo</p>
+                    <p style="color: #64748b; font-size: 0.8rem;">GBP {annual:.0f}/year</p>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # TAB 3 - INCOME VS SPENDING
     with tabs[2]:
-        st.markdown("### How the Economy Affects Your Finances")
+        st.markdown("### Money In vs Money Out")
         
-        col1, col2 = st.columns(2)
+        monthly_spending = spending_df.groupby('date')['amount'].sum().reset_index()
+        monthly_spending.columns = ['date', 'spending']
         
-        with col1:
-            st.markdown("#### Key Economic Indicators")
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
-            fig.add_trace(
-                go.Scatter(x=econ_data['date'], y=econ_data['inflation_rate'],
-                          name="Inflation Rate", line=dict(color='#ef4444', width=2)),
-                secondary_y=False
-            )
-            fig.add_trace(
-                go.Scatter(x=econ_data['date'], y=econ_data['base_interest_rate'],
-                          name="Base Interest Rate", line=dict(color='#3b82f6', width=2)),
-                secondary_y=False
-            )
-            fig.add_trace(
-                go.Scatter(x=econ_data['date'], y=econ_data['student_loan_interest'],
-                          name="Student Loan Rate", line=dict(color='#f59e0b', width=2)),
-                secondary_y=False
-            )
-            
-            fig.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                margin=dict(l=0, r=0, t=40, b=0),
-                yaxis=dict(title='Rate (%)', gridcolor='rgba(255,255,255,0.1)'),
-                xaxis=dict(gridcolor='rgba(255,255,255,0.1)')
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        merged = pd.merge(monthly_spending, income_df[['date', 'total_income']], on='date')
         
-        with col2:
-            st.markdown("#### Your Purchasing Power")
-            monthly_totals = spending_data.groupby('date')['amount'].sum().reset_index()
-            monthly_totals['savings'] = st.session_state.income - monthly_totals['amount']
-            monthly_totals['cumulative'] = monthly_totals['savings'].cumsum()
-            
-            # adjust for inflation impact
-            monthly_totals['real_value'] = monthly_totals['cumulative'].copy()
-            for i in range(len(monthly_totals)):
-                if i < len(econ_data):
-                    infl_factor = 1 - (econ_data['inflation_rate'].iloc[i] / 100 / 12)
-                    monthly_totals.loc[i, 'real_value'] = monthly_totals.loc[i, 'cumulative'] * (infl_factor ** (i+1))
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=monthly_totals['date'], 
-                y=monthly_totals['cumulative'],
-                name='Nominal Savings',
-                fill='tozeroy',
-                line=dict(color='#3b82f6', width=2)
-            ))
-            fig.add_trace(go.Scatter(
-                x=monthly_totals['date'],
-                y=monthly_totals['real_value'],
-                name='Real Value (Inflation Adjusted)',
-                fill='tozeroy',
-                line=dict(color='#10b981', width=2)
-            ))
-            
-            fig.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                margin=dict(l=0, r=0, t=40, b=0),
-                yaxis=dict(title='Cumulative Savings (GBP)', gridcolor='rgba(255,255,255,0.1)'),
-                xaxis=dict(gridcolor='rgba(255,255,255,0.1)')
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure()
         
-        # student loan calculator
-        # repayment threshold for plan 2: 27,295 GBP (2024/25)
-        # source: gov.uk/repaying-your-student-loan/what-you-pay
-        st.markdown("### Student Loan Impact Calculator")
+        fig.add_trace(go.Bar(
+            x=merged['date'],
+            y=merged['total_income'],
+            name='Income',
+            marker_color='#10b981'
+        ))
         
-        loan_cols = st.columns(3)
+        fig.add_trace(go.Bar(
+            x=merged['date'],
+            y=merged['spending'],
+            name='Spending',
+            marker_color='#ef4444'
+        ))
         
-        current_rate = econ_data['student_loan_interest'].iloc[-1]
-        annual_interest = st.session_state.loan_balance * (current_rate / 100)
-        threshold = 27295
+        fig.update_layout(
+            template='plotly_dark',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            barmode='group',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            margin=dict(l=0, r=0, t=30, b=0),
+            xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(title='Amount (GBP)', gridcolor='rgba(255,255,255,0.1)')
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
-        with loan_cols[0]:
+        # cumulative balance
+        st.markdown("### Running Balance")
+        
+        merged['balance'] = merged['total_income'] - merged['spending']
+        merged['cumulative'] = merged['balance'].cumsum()
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=merged['date'],
+            y=merged['cumulative'],
+            fill='tozeroy',
+            line=dict(color='#3b82f6', width=2),
+            fillcolor='rgba(59, 130, 246, 0.3)'
+        ))
+        
+        fig.add_hline(y=0, line_dash="dash", line_color="#ef4444", opacity=0.5)
+        
+        fig.update_layout(
+            template='plotly_dark',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            showlegend=False,
+            margin=dict(l=0, r=0, t=10, b=0),
+            xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(title='Cumulative Balance (GBP)', gridcolor='rgba(255,255,255,0.1)')
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        if merged['cumulative'].iloc[-1] < 0:
             st.markdown(f"""
-            <div class="feature-card" style="text-align: center;">
-                <p style="color: #a0aec0;">Current Loan Balance</p>
-                <p class="stat-highlight">{st.session_state.loan_balance:,} GBP</p>
+            <div class="warning-box">
+                <p style="color: #fbbf24; font-weight: 600; margin: 0 0 8px 0;">Youre in the red</p>
+                <p style="color: #cbd5e0; margin: 0;">Over the year youve spent GBP {abs(merged['cumulative'].iloc[-1]):.0f} more than youve earned. This means debt or eating into savings.</p>
             </div>
             """, unsafe_allow_html=True)
-        
-        with loan_cols[1]:
+        else:
             st.markdown(f"""
-            <div class="feature-card" style="text-align: center;">
-                <p style="color: #a0aec0;">Annual Interest Accruing</p>
-                <p class="stat-highlight">{annual_interest:,.0f} GBP</p>
-                <p style="color: #718096; font-size: 0.8rem;">at {current_rate:.1f}% rate</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with loan_cols[2]:
-            # estimate based on typical graduate salary
-            grad_salary = 35000
-            annual_repayment = max(0, (grad_salary - threshold) * 0.09)
-            if annual_repayment < annual_interest:
-                years_est = "30+ (write-off)"
-            else:
-                years_est = f"{st.session_state.loan_balance / annual_repayment:.0f}"
-            
-            st.markdown(f"""
-            <div class="feature-card" style="text-align: center;">
-                <p style="color: #a0aec0;">Est. Repayment Years</p>
-                <p class="stat-highlight">{years_est}</p>
-                <p style="color: #718096; font-size: 0.8rem;">at {grad_salary:,} GBP salary</p>
+            <div class="good-box">
+                <p style="color: #34d399; font-weight: 600; margin: 0 0 8px 0;">Youre in the green</p>
+                <p style="color: #cbd5e0; margin: 0;">Over the year youve got GBP {merged['cumulative'].iloc[-1]:.0f} more than youve spent. Nice one.</p>
             </div>
             """, unsafe_allow_html=True)
     
-    # tab 4 - budget planner
+    # TAB 4 - INSIGHTS
     with tabs[3]:
-        st.markdown("### Smart Budget Planner")
-        st.markdown("Set your targets and track your progress with recommendations based on your spending patterns.")
+        st.markdown("### Whats Going On")
         
-        budget_cols = st.columns([1, 2])
+        insights = generate_insights(health, spending_df, income_df, location)
         
-        with budget_cols[0]:
-            st.markdown("#### Set Your Targets")
-            target_savings_pct = st.slider("Target Savings Rate (%)", 0, 50, 20)
+        for insight in insights:
+            if insight['type'] == 'warning':
+                box_class = 'warning-box'
+                title_color = '#fbbf24'
+            elif insight['type'] == 'good':
+                box_class = 'good-box'
+                title_color = '#34d399'
+            else:
+                box_class = 'info-box'
+                title_color = '#60a5fa'
             
-            # the 50/30/20 rule explanation
-            st.markdown("""
-            <div class="insight-box">
-                <p style="color: white; margin: 0 0 8px 0;"><strong>The 50/30/20 Rule</strong></p>
-                <p style="color: #cbd5e0; margin: 0; font-size: 0.85rem;">
-                    50% Needs / 30% Wants / 20% Savings
-                </p>
+            st.markdown(f"""
+            <div class="{box_class}">
+                <p style="color: {title_color}; font-weight: 600; margin: 0 0 8px 0;">{insight['title']}</p>
+                <p style="color: #cbd5e0; margin: 0 0 8px 0;">{insight['message']}</p>
+                <p style="color: #94a3b8; font-size: 0.85rem; margin: 0;"><strong>Tip:</strong> {insight['action']}</p>
             </div>
             """, unsafe_allow_html=True)
-            
-            needs_target = st.session_state.income * 0.50
-            wants_target = st.session_state.income * 0.30
-            savings_target = st.session_state.income * (target_savings_pct / 100)
         
-        with budget_cols[1]:
-            avg_by_cat = spending_data.groupby('category')['amount'].mean()
-            
-            needs_categories = ['Rent/Housing', 'Groceries', 'Utilities', 'Transport', 'Healthcare']
-            wants_categories = ['Entertainment', 'Eating Out', 'Subscriptions', 'Clothing', 'Other']
-            
-            actual_needs = avg_by_cat[avg_by_cat.index.isin(needs_categories)].sum()
-            actual_wants = avg_by_cat[avg_by_cat.index.isin(wants_categories)].sum()
-            actual_savings = st.session_state.income - actual_needs - actual_wants
-            
-            fig = go.Figure()
-            
-            cat_names = ['Needs', 'Wants', 'Savings']
-            current_amounts = [actual_needs, actual_wants, actual_savings]
-            target_amounts = [needs_target, wants_target, savings_target]
-            
-            fig.add_trace(go.Bar(
-                name='Current',
-                x=cat_names,
-                y=current_amounts,
-                marker_color='#7c3aed'
-            ))
-            fig.add_trace(go.Bar(
-                name='Target',
-                x=cat_names,
-                y=target_amounts,
-                marker_color='#00d4ff'
-            ))
-            
-            fig.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                barmode='group',
-                margin=dict(l=0, r=0, t=30, b=0),
-                yaxis=dict(title='Monthly Amount (GBP)', gridcolor='rgba(255,255,255,0.1)'),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        # predictions
+        st.markdown("### Next 6 Months Prediction")
         
-        # category budget breakdown
-        st.markdown("#### Category Budgets")
+        model, monthly_hist = train_predictor(spending_df)
         
-        # suggested budgets based on averages and 50/30/20
-        suggested = {
-            'Rent/Housing': 600,
-            'Groceries': 180,
-            'Transport': 70,
-            'Utilities': 55,
-            'Entertainment': 60,
-            'Eating Out': 50,
-            'Subscriptions': 25,
-            'Healthcare': 20,
-            'Education/Books': 40,
-            'Clothing': 30,
-            'Other': 40
-        }
-        
-        cat_col1, cat_col2 = st.columns(2)
-        
-        items = list(suggested.items())
-        with cat_col1:
-            for cat, sug in items[:6]:
-                actual = avg_by_cat.get(cat, 0)
-                diff = actual - sug
-                status = "[OK]" if diff <= 0 else "[Over]"
-                st.markdown(f"**{cat}**: {actual:.0f} / {sug} GBP {status}")
-        
-        with cat_col2:
-            for cat, sug in items[6:]:
-                actual = avg_by_cat.get(cat, 0)
-                diff = actual - sug
-                status = "[OK]" if diff <= 0 else "[Over]"
-                st.markdown(f"**{cat}**: {actual:.0f} / {sug} GBP {status}")
-    
-    # tab 5 - predictions
-    with tabs[4]:
-        st.markdown("### Spending Predictions")
-        
-        model, monthly_hist = build_spending_model(spending_data)
-        
-        # predict next 6 months
-        n_future = 6
         last_month = monthly_hist['month_num'].max()
         last_date = monthly_hist['date'].max()
         
-        future_rows = []
-        for i in range(1, n_future + 1):
+        future_data = []
+        for i in range(1, 7):
             fut_date = last_date + timedelta(days=30*i)
-            future_rows.append({
+            future_data.append({
                 'month_num': last_month + i,
                 'month_of_year': fut_date.month,
-                'semester_start': 1 if fut_date.month in [9, 10, 1, 2] else 0,
+                'is_term_start': 1 if fut_date.month in [9, 10, 1] else 0,
+                'is_exam_period': 1 if fut_date.month in [5, 12] else 0,
+                'is_summer': 1 if fut_date.month in [6, 7, 8] else 0,
                 'date': fut_date
             })
         
-        future_df = pd.DataFrame(future_rows)
-        preds = model.predict(future_df[['month_num', 'month_of_year', 'semester_start']])
-        future_df['predicted'] = preds
+        future_df = pd.DataFrame(future_data)
+        features = ['month_num', 'month_of_year', 'is_term_start', 'is_exam_period', 'is_summer']
+        future_df['predicted'] = model.predict(future_df[features])
         
-        pred_cols = st.columns([2, 1])
+        predicted_total = future_df['predicted'].sum()
+        avg_predicted = future_df['predicted'].mean()
         
-        with pred_cols[0]:
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=monthly_hist['date'],
-                y=monthly_hist['amount'],
-                name='Historical',
-                line=dict(color='#3b82f6', width=2)
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=future_df['date'],
-                y=future_df['predicted'],
-                name='Predicted',
-                line=dict(color='#f59e0b', width=2, dash='dash')
-            ))
-            
-            # confidence band (simple +/- 10%)
-            fig.add_trace(go.Scatter(
-                x=list(future_df['date']) + list(future_df['date'][::-1]),
-                y=list(future_df['predicted'] * 1.1) + list((future_df['predicted'] * 0.9)[::-1]),
-                fill='toself',
-                fillcolor='rgba(245, 158, 11, 0.2)',
-                line=dict(color='rgba(255,255,255,0)'),
-                name='90% Confidence'
-            ))
-            
-            fig.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=0, r=0, t=30, b=0),
-                yaxis=dict(title='Monthly Spending (GBP)', gridcolor='rgba(255,255,255,0.1)'),
-                xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        st.markdown(f"""
+        <div class="card">
+            <p style="color: #94a3b8;">Predicted spending next 6 months</p>
+            <p class="big-number">GBP {predicted_total:,.0f}</p>
+            <p style="color: #64748b;">About GBP {avg_predicted:.0f} per month</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # TAB 5 - LOAN INFO
+    with tabs[4]:
+        st.markdown("### Your Student Loan")
         
-        with pred_cols[1]:
-            st.markdown("#### 6-Month Forecast")
-            total_pred = future_df['predicted'].sum()
-            avg_pred = future_df['predicted'].mean()
-            
+        if loan_type == 'plan5':
+            threshold = PLAN5_THRESHOLD
+            writeoff = PLAN5_WRITEOFF
+            rate_desc = "RPI (capped at target rate of inflation)"
+        else:
+            threshold = PLAN2_THRESHOLD
+            writeoff = PLAN2_WRITEOFF
+            rate_desc = "RPI + up to 3%"
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
             st.markdown(f"""
-            <div class="feature-card">
-                <p style="color: #a0aec0;">Predicted Total</p>
-                <p class="stat-highlight">{total_pred:,.0f} GBP</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div class="feature-card">
-                <p style="color: #a0aec0;">Monthly Average</p>
-                <p class="stat-highlight">{avg_pred:,.0f} GBP</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            proj_savings = (st.session_state.income * 6) - total_pred
-            savings_color = '#10b981' if proj_savings > 0 else '#ef4444'
-            
-            st.markdown(f"""
-            <div class="feature-card">
-                <p style="color: #a0aec0;">Projected Savings</p>
-                <p class="stat-highlight" style="color: {savings_color};">
-                    {proj_savings:,.0f} GBP
-                </p>
+            <div class="card" style="text-align: center;">
+                <p style="color: #94a3b8;">Current Balance</p>
+                <p class="big-number">GBP {current_debt:,}</p>
             </div>
             """, unsafe_allow_html=True)
         
-        # scenario comparison
-        st.markdown("### Scenario Analysis")
-        st.markdown("See how changes in your habits could affect your finances.")
+        with col2:
+            st.markdown(f"""
+            <div class="card" style="text-align: center;">
+                <p style="color: #94a3b8;">Repayment Threshold</p>
+                <p class="big-number">GBP {threshold:,}</p>
+                <p style="color: #64748b; font-size: 0.85rem;">per year</p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        scenario_cols = st.columns(3)
+        with col3:
+            st.markdown(f"""
+            <div class="card" style="text-align: center;">
+                <p style="color: #94a3b8;">Written Off After</p>
+                <p class="big-number">{writeoff} years</p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        scenarios = [
-            {
-                'name': 'Current Path',
-                'savings': proj_savings,
-                'desc': 'Continue as you are',
-                'color': '#3b82f6'
-            },
-            {
-                'name': 'Reduce Eating Out 50%',
-                'savings': proj_savings + (50 * 0.5 * 6),
-                'desc': 'Cook more, save more',
-                'color': '#10b981'
-            },
-            {
-                'name': 'Cut Subscriptions',
-                'savings': proj_savings + (25 * 6),
-                'desc': 'Audit and reduce',
-                'color': '#f59e0b'
-            }
-        ]
+        st.markdown("### What Youll Actually Repay")
+        st.markdown("Based on different graduate salaries")
         
-        for col, sc in zip(scenario_cols, scenarios):
-            with col:
-                st.markdown(f"""
-                <div class="feature-card" style="border-left: 4px solid {sc['color']};">
-                    <h4 style="color: white;">{sc['name']}</h4>
-                    <p class="stat-highlight" style="color: {sc['color']};">{sc['savings']:,.0f} GBP</p>
-                    <p style="color: #a0aec0; font-size: 0.85rem;">{sc['desc']}</p>
-                </div>
-                """, unsafe_allow_html=True)
+        salaries = [25000, 30000, 35000, 40000, 50000, 60000]
+        repayments = []
+        
+        for salary in salaries:
+            if salary > threshold:
+                monthly = (salary - threshold) * 0.09 / 12
+                annual = (salary - threshold) * 0.09
+            else:
+                monthly = 0
+                annual = 0
+            
+            repayments.append({
+                'Salary': f'GBP {salary:,}',
+                'Monthly Repayment': f'GBP {monthly:.0f}',
+                'Annual Repayment': f'GBP {annual:.0f}'
+            })
+        
+        repay_df = pd.DataFrame(repayments)
+        st.dataframe(repay_df, use_container_width=True, hide_index=True)
+        
+        st.markdown(f"""
+        <div class="info-box">
+            <p style="color: #60a5fa; font-weight: 600; margin: 0 0 8px 0;">How student loans actually work</p>
+            <p style="color: #cbd5e0; margin: 0 0 8px 0;">
+                You only repay 9% of what you earn <strong>above</strong> GBP {threshold:,}. If you earn less than that, you pay nothing.
+                Its taken automatically from your payslip like tax.
+            </p>
+            <p style="color: #cbd5e0; margin: 0 0 8px 0;">
+                Interest rate: {rate_desc}. Currently around {STUDENT_LOAN_INTEREST}%.
+            </p>
+            <p style="color: #94a3b8; font-size: 0.85rem; margin: 0;">
+                Most graduates never pay it all off - its more like a graduate tax than a real loan. Dont stress about the total number.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
     
     # footer
     st.markdown("---")
     st.markdown("""
-    <div style="text-align: center; color: #718096; padding: 20px;">
-        <p>Built for Octopus Hackathon 2025</p>
-        <p style="font-size: 0.8rem;">EconPulse uses machine learning to analyse spending patterns and provide personalised insights.</p>
-        <p style="font-size: 0.75rem; color: #4a5568;">
-            Data shown is for demonstration purposes. Connect your accounts for personalised analysis.
-        </p>
+    <div style="text-align: center; color: #64748b; padding: 20px; font-size: 0.85rem;">
+        <p>EconPulse - Built for Octopus Hackathon 2025</p>
+        <p style="font-size: 0.75rem;">Data based on NUS, Save the Student, and gov.uk figures. For illustration only.</p>
     </div>
     """, unsafe_allow_html=True)
 

@@ -1,72 +1,38 @@
 # EconPulse
 
-Student Financial Wellness Platform - built for Octopus Hackathon 2025
+money tracker for uk students - octopus hackathon 2025
 
-## The Problem
+## what it does
 
-72% of UK students experience financial stress (NUS Cost of Living Survey 2024). Most budgeting apps treat students like everyone else, ignoring the unique challenges we face: irregular income from part-time work, student loans hanging over us, semester-based expenses, and lets be honest - not much financial literacy coming out of school.
+tracks spending and income for uk students based on actual costs and maintenance loan amounts. shows you where your money goes and whether youre overspending.
 
-## What It Does
+## features
 
-EconPulse helps students understand their spending in the context of real economic conditions. It uses ML to spot patterns, predict future spending, and give recommendations that actually make sense for students.
+- spending breakdown by category
+- income vs spending comparison (including loan installments)
+- financial health score based on real metrics
+- student loan repayment info (plan 2 and plan 5)
+- 6 month spending predictions
 
-## Features
+## data sources
 
-- **Dashboard** - spending breakdown by category with a health score
-- **AI Insights** - pattern analysis using K-means clustering, trend detection
-- **Economic Impact** - shows how inflation and interest rates affect your money and student loans
-- **Budget Planner** - 50/30/20 rule with category tracking
-- **Predictions** - 6-month forecasts using Random Forest
+spending figures based on:
+- save the student annual survey
+- nus cost of living report
+- unipol student homes survey
 
-## Tech
+loan info from gov.uk
 
-- Python 3.9+
-- Streamlit
-- Pandas / NumPy
-- Scikit-learn
-- Plotly
+## running it
 
-## Data Sources
-
-- ONS Consumer Price Inflation (ons.gov.uk)
-- Bank of England base rate (bankofengland.co.uk)
-- Student Loans Company thresholds (gov.uk)
-- NUS student spending survey
-
-## Running It
-
-```bash
-git clone https://github.com/yourusername/econpulse.git
-cd econpulse
+```
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Structure
+## tech
 
-```
-econpulse/
-  app.py              # main app
-  requirements.txt    
-  README.md          
-  DEPLOYMENT.md      
-```
-
-## How It Works
-
-1. Spending data based on NUS survey averages with realistic variance
-2. Health score combines savings rate, stability, and needs/wants balance
-3. K-means clustering finds spending patterns
-4. Random Forest predicts future months
-5. Economic data shows inflation impact on purchasing power
-
-## Whats Next
-
-- Open Banking integration for real data
-- Push notifications
-- Benchmarking against other students
-- Mobile apps
-
-## Licence
-
-MIT
+- streamlit
+- pandas
+- plotly
+- scikit-learn
